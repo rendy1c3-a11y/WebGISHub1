@@ -1,5 +1,12 @@
 // WebGIS Terintegrasi Data Lokal GISHUB Kemenhub (24 Dataset Lengkap)
-document.addEventListener("DOMContentLoaded", () => {
+function initWebGIS() {
+    function resolveDataUrl(path) {
+        if (window.location.protocol === "file:" || !window.location.origin || window.location.origin === "null") {
+            return "https://rendy1c3-a11y.github.io/WebGISHub1/" + path;
+        }
+        return path;
+    }
+
     // 1. Inisialisasi Peta Leaflet
     const map = L.map("map", {
         center: [-2.0, 118.0],
@@ -96,7 +103,16 @@ document.addEventListener("DOMContentLoaded", () => {
         if (geojsonCache[layerId]) {
             return geojsonCache[layerId];
         }
-        const res = await fetch(`data/${layerId}.geojson`);
+        let url = resolveDataUrl(`data/${layerId}.geojson`);
+        let res;
+        try {
+            res = await fetch(url);
+        } catch (e) {
+            res = await fetch(`https://rendy1c3-a11y.github.io/WebGISHub1/data/${layerId}.geojson`);
+        }
+        if (!res || !res.ok) {
+            res = await fetch(`https://rendy1c3-a11y.github.io/WebGISHub1/data/${layerId}.geojson`);
+        }
         if (!res.ok) {
             throw new Error(`Gagal membaca data/${layerId}.geojson (HTTP ${res.status})`);
         }
@@ -108,8 +124,18 @@ document.addEventListener("DOMContentLoaded", () => {
     // 3. Load Katalog Lengkap 24 Dataset
     async function loadCatalog() {
         try {
-            const res = await fetch("catalog.json");
-            catalogData = await res.json();
+            if (typeof EMBEDDED_CATALOG !== "undefined" && Array.isArray(EMBEDDED_CATALOG) && EMBEDDED_CATALOG.length) {
+                catalogData = EMBEDDED_CATALOG;
+            } else {
+                let url = resolveDataUrl("catalog.json");
+                let res;
+                try {
+                    res = await fetch(url);
+                } catch(e) {
+                    res = await fetch("https://rendy1c3-a11y.github.io/WebGISHub1/catalog.json");
+                }
+                catalogData = await res.json();
+            }
 
             renderCatalogList(catalogData);
             populateSpatialPortDropdown();
@@ -799,7 +825,15 @@ document.addEventListener("DOMContentLoaded", () => {
         initStatChecklist();
 
         try {
-            const res = await fetch("data/stats.json");
+            let res;
+            try {
+                res = await fetch(resolveDataUrl("data/stats.json"));
+            } catch(e) {
+                res = await fetch("https://rendy1c3-a11y.github.io/WebGISHub1/data/stats.json");
+            }
+            if (!res || !res.ok) {
+                res = await fetch("https://rendy1c3-a11y.github.io/WebGISHub1/data/stats.json");
+            }
             const data = await res.json();
 
             // Set KPI
@@ -873,4 +907,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Inisialisasi awal
     loadCatalog();
-});
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initWebGIS);
+} else {
+    initWebGIS();
+}
