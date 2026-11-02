@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGIS Transportasi Nasional | Terkoneksi GISHUB Kemenhub & PostGIS</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-slate-950 text-slate-100 flex flex-col h-screen overflow-hidden font-sans">
+
+    <!-- HEADER / TOP NAVBAR -->
+    <header class="bg-gradient-to-r from-slate-950 via-blue-950 to-slate-900 border-b border-sky-800/40 px-4 py-2.5 flex items-center justify-between z-30 shadow-xl">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-sky-600 flex items-center justify-center text-white shadow-lg shadow-orange-500/20">
+                <i class="fa-solid fa-compass text-xl"></i>
+            </div>
+            <div>
+                <div class="flex items-center space-x-2">
+                    <h1 class="font-bold text-lg tracking-wide text-white flex items-center gap-2">
+                        GISHUB WEBGIS TRANSPORTASI
+                    </h1>
+                    <span class="text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
+                        <i class="fa-solid fa-link text-[9px]"></i> Kemenhub Live
+                    </span>
+                </div>
+                <p class="text-xs text-slate-400">Integrasi OGC WMS/WFS GISHUB Kementerian Perhubungan RI & PostgreSQL PostGIS</p>
+            </div>
+        </div>
+
+        <!-- Connection Badges & Quick Action Controls -->
+        <div class="flex items-center space-x-3">
+            <!-- GISHUB Server Status -->
+            <div id="gishub-status-badge" class="hidden sm:flex items-center space-x-2 bg-slate-900 border border-emerald-500/30 text-emerald-400 text-xs px-3 py-1.5 rounded-lg shadow-inner">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>GISHUB OWS Online</span>
+            </div>
+
+            <!-- PostGIS Status -->
+            <div class="hidden md:flex items-center space-x-2 bg-slate-900 border border-sky-500/30 text-sky-400 text-xs px-3 py-1.5 rounded-lg shadow-inner">
+                <i class="fa-solid fa-database text-[10px]"></i>
+                <span id="postgis-status-text">PostGIS 3.6 Terhubung</span>
+            </div>
+
+            <button id="btn-toggle-table" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow">
+                <i class="fa-solid fa-table"></i>
+                <span class="hidden md:inline">Tabel Atribut</span>
+            </button>
+
+            <button id="btn-reset-view" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow">
+                <i class="fa-solid fa-expand"></i>
+                <span class="hidden md:inline">Reset Peta</span>
+            </button>
+
+            <button id="btn-toggle-sidebar" class="bg-sky-600 hover:bg-sky-500 text-white text-xs px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 shadow-md shadow-sky-600/30">
+                <i class="fa-solid fa-sliders"></i>
+                <span class="hidden sm:inline">Katalog & Panel</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN BODY: SIDEBAR + MAP -->
+    <div class="flex-1 flex relative overflow-hidden">
+        
+        <!-- SIDEBAR PANEL -->
+        <aside id="sidebar-panel" class="w-[420px] bg-slate-900/95 backdrop-blur border-r border-slate-800 flex flex-col z-20 shadow-2xl transition-all duration-300 ease-in-out">
+            
+            <!-- Tab Navigation -->
+            <div class="flex border-b border-slate-800 text-xs font-semibold text-slate-400 bg-slate-950/70">
+                <button class="tab-btn active flex-1 py-3 px-1 text-center border-b-2 border-sky-400 text-sky-400 flex items-center justify-center gap-1.5 hover:text-sky-300 transition" data-tab="tab-catalog">
+                    <i class="fa-solid fa-layer-group"></i>
+                    <span>Katalog GISHUB</span>
+                </button>
+                <button class="tab-btn flex-1 py-3 px-1 text-center border-b-2 border-transparent hover:text-sky-300 transition flex items-center justify-center gap-1.5" data-tab="tab-spatial">
+                    <i class="fa-solid fa-brain text-amber-400"></i>
+                    <span>Analisis Spasial</span>
+                </button>
+                <button class="tab-btn flex-1 py-3 px-1 text-center border-b-2 border-transparent hover:text-sky-300 transition flex items-center justify-center gap-1.5" data-tab="tab-stats">
+                    <i class="fa-solid fa-chart-simple"></i>
+                    <span>Statistik</span>
+                </button>
+                <button class="tab-btn flex-1 py-3 px-1 text-center border-b-2 border-transparent hover:text-sky-300 transition flex items-center justify-center gap-1.5" data-tab="tab-about">
+                    <i class="fa-solid fa-circle-nodes"></i>
+                    <span>Info</span>
+                </button>
+            </div>
+
+            <!-- Tab Content Body -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                
+                <!-- TAB 1: GISHUB LAYER CATALOG -->
+                <div id="tab-catalog" class="tab-content space-y-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-400 uppercase tracking-wider font-bold">Layer Tematik Multimoda</span>
+                        <div class="flex items-center gap-2">
+                            <span id="active-layers-badge" class="text-[11px] bg-sky-950 text-sky-300 border border-sky-800/60 px-2 py-0.5 rounded-full font-mono">
+                                4 Aktif
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Filter / Search Layer Box -->
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+                        <input type="text" id="input-search-layer" placeholder="Cari nama layer (misal: Alur, Bandara, Pelabuhan)..." class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-sky-500">
+                    </div>
+
+                    <!-- Category Pills -->
+                    <div class="flex flex-wrap gap-1.5 text-[11px]" id="category-filter-pills">
+                        <button class="category-pill active px-2.5 py-1 rounded-md bg-sky-600 text-white font-medium" data-cat="all">Semua</button>
+                        <button class="category-pill px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 hover:bg-slate-700" data-cat="Laut">🚢 Laut</button>
+                        <button class="category-pill px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 hover:bg-slate-700" data-cat="Udara">✈️ Udara</button>
+                        <button class="category-pill px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 hover:bg-slate-700" data-cat="Perkeretaapian">🚆 Kereta</button>
+                        <button class="category-pill px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 hover:bg-slate-700" data-cat="Darat">🚌 Darat</button>
+                        <button class="category-pill px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 hover:bg-slate-700" data-cat="Pendidikan">🎓 SDM</button>
+                    </div>
+
+                    <!-- Layer Cards Container -->
+                    <div id="catalog-layers-container" class="space-y-3">
+                        <!-- Loaded dynamically via JavaScript -->
+                    </div>
+                </div>
+
+                <!-- TAB 2: POSTGIS SPATIAL ANALYSIS -->
+                <div id="tab-spatial" class="tab-content hidden space-y-4">
+                    <div class="text-xs text-slate-400 uppercase tracking-wider font-bold">
+                        Analisis Buffer Spasial PostGIS
+                    </div>
+
+                    <div class="p-3 bg-gradient-to-br from-blue-950/40 to-slate-900 border border-sky-800/40 rounded-xl space-y-2">
+                        <div class="text-xs font-semibold text-sky-300 flex items-center gap-1.5">
+                            <i class="fa-solid fa-radar text-amber-400"></i>
+                            <span>Query ST_DWithin & ST_Distance</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 leading-relaxed">
+                            Cari otomatis titik kejadian kecelakaan pelayaran di sekitar pelabuhan tertentu dalam radius buffer geodetik menggunakan fungsi spasial PostGIS secara real-time.
+                        </p>
+                    </div>
+
+                    <div class="space-y-3 bg-slate-950/70 p-3.5 rounded-xl border border-slate-800">
+                        <div>
+                            <label class="text-xs font-semibold text-slate-300 block mb-1">
+                                Pilih Pelabuhan Acuan:
+                            </label>
+                            <select id="select-port-spatial" class="w-full bg-slate-900 border border-slate-700 text-xs rounded-lg px-2.5 py-2 text-slate-200 focus:outline-none focus:border-sky-500">
+                                <option value="">-- Memuat daftar pelabuhan... --</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <div class="flex items-center justify-between text-xs text-slate-300 mb-1">
+                                <span>Radius Buffer:</span>
+                                <span id="radius-val" class="font-bold text-amber-400 font-mono">100 km</span>
+                            </div>
+                            <input type="range" id="input-radius-km" min="20" max="300" step="10" value="100" class="w-full accent-amber-500 cursor-pointer">
+                        </div>
+
+                        <div class="flex gap-2">
+                            <button id="btn-run-spatial-buffer" class="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-bold text-xs py-2.5 rounded-lg transition flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20">
+                                <i class="fa-solid fa-crosshairs"></i>
+                                <span>Jalankan Analisis Buffer</span>
+                            </button>
+                            <button id="btn-reset-spatial" class="bg-slate-800 hover:bg-rose-950/70 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-600/50 text-xs px-3.5 py-2.5 rounded-lg transition font-semibold flex items-center justify-center gap-1.5 shadow" title="Hapus Lingkaran Buffer & Reset Hasil Analisis">
+                                <i class="fa-solid fa-trash-can"></i>
+                                <span>Reset</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Spatial Results Container -->
+                    <div id="spatial-results-box" class="hidden space-y-2">
+                        <div class="flex items-center justify-between text-xs">
+                            <span class="font-bold text-slate-200">Hasil Analisis PostGIS:</span>
+                            <span id="spatial-results-count" class="text-amber-400 font-bold font-mono">0 Insiden</span>
+                        </div>
+                        <div id="spatial-results-items" class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1 text-xs">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: STATS & CHARTS -->
+                <div id="tab-stats" class="tab-content hidden space-y-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-400 uppercase tracking-wider font-bold">
+                            Dashboard Data Transportasi
+                        </span>
+                        <span class="text-[10px] text-sky-400 font-mono">Multimoda Kemenhub</span>
+                    </div>
+
+                    <!-- FITUR CEK LIST PILIHAN STATISTIK (SENDIRI-SENDIRI) -->
+                    <div class="p-3 bg-slate-950/90 rounded-xl border border-slate-800 space-y-2.5">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                                <i class="fa-solid fa-list-check text-sky-400"></i>
+                                <span>Pilih Tampilan Statistik:</span>
+                            </span>
+                            <div class="flex gap-1.5 text-[10px]">
+                                <button type="button" id="btn-stat-check-all" class="text-sky-400 hover:underline">Semua</button>
+                                <span class="text-slate-600">|</span>
+                                <button type="button" id="btn-stat-uncheck-all" class="text-slate-400 hover:underline">Reset</button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2 text-xs">
+                            <label class="flex items-center gap-2 p-2 bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-lg cursor-pointer transition select-none">
+                                <input type="checkbox" id="chk-stat-kapal" checked class="rounded bg-slate-800 border-slate-700 text-rose-500 focus:ring-0">
+                                <div class="truncate">
+                                    <span class="font-semibold text-slate-200 block truncate">🚢 Kapal & Laut</span>
+                                    <span class="text-[10px] text-slate-500 block truncate">Kecelakaan & Pelabuhan</span>
+                                </div>
+                            </label>
+
+                            <label class="flex items-center gap-2 p-2 bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-lg cursor-pointer transition select-none">
+                                <input type="checkbox" id="chk-stat-bandara" checked class="rounded bg-slate-800 border-slate-700 text-purple-500 focus:ring-0">
+                                <div class="truncate">
+                                    <span class="font-semibold text-slate-200 block truncate">✈️ Bandara & Udara</span>
+                                    <span class="text-[10px] text-slate-500 block truncate">Sebaran per Provinsi</span>
+                                </div>
+                            </label>
+
+                            <label class="flex items-center gap-2 p-2 bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-lg cursor-pointer transition select-none">
+                                <input type="checkbox" id="chk-stat-kereta" checked class="rounded bg-slate-800 border-slate-700 text-emerald-500 focus:ring-0">
+                                <div class="truncate">
+                                    <span class="font-semibold text-slate-200 block truncate">🚆 Kereta Api</span>
+                                    <span class="text-[10px] text-slate-500 block truncate">Stasiun & Prasarana</span>
+                                </div>
+                            </label>
+
+                            <label class="flex items-center gap-2 p-2 bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-lg cursor-pointer transition select-none">
+                                <input type="checkbox" id="chk-stat-sdm" checked class="rounded bg-slate-800 border-slate-700 text-amber-500 focus:ring-0">
+                                <div class="truncate">
+                                    <span class="font-semibold text-slate-200 block truncate">🎓 SDM & Penunjang</span>
+                                    <span class="text-[10px] text-slate-500 block truncate">Sekolah & Fasilitas</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- SECTION 1: STATISTIK KAPAL & PELAYARAN LAUT -->
+                    <div id="section-stat-kapal" class="space-y-3">
+                        <div class="flex items-center justify-between border-b border-rose-950 pb-1">
+                            <span class="text-xs font-bold text-rose-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-ship"></i> Statistik Pelayaran & Kapal
+                            </span>
+                            <span class="text-[10px] bg-rose-950/70 text-rose-300 border border-rose-800/40 px-2 py-0.5 rounded-full font-mono">Laut</span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+                                <div class="text-[11px] text-slate-400">Total Pelabuhan</div>
+                                <div id="kpi-pelabuhan" class="text-lg font-bold text-sky-400 mt-0.5">300</div>
+                                <div class="text-[10px] text-slate-500">Pangkalan Laut</div>
+                            </div>
+                            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+                                <div class="text-[11px] text-slate-400">Total Kecelakaan</div>
+                                <div id="kpi-kecelakaan" class="text-lg font-bold text-rose-400 mt-0.5">214</div>
+                                <div class="text-[10px] text-slate-500">Insiden Pelayaran</div>
+                            </div>
+                        </div>
+
+                        <!-- Chart Kecelakaan Laut -->
+                        <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800 space-y-2">
+                            <div class="text-xs font-semibold text-slate-300">
+                                Kategori Kecelakaan Kapal Pelayaran
+                            </div>
+                            <div class="h-44">
+                                <canvas id="chart-kecelakaan"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECTION 2: STATISTIK BANDARA & PENERBANGAN UDARA -->
+                    <div id="section-stat-bandara" class="space-y-3">
+                        <div class="flex items-center justify-between border-b border-purple-950 pb-1">
+                            <span class="text-xs font-bold text-purple-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-plane"></i> Statistik Bandar Udara
+                            </span>
+                            <span class="text-[10px] bg-purple-950/70 text-purple-300 border border-purple-800/40 px-2 py-0.5 rounded-full font-mono">Udara</span>
+                        </div>
+
+                        <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+                            <div>
+                                <div class="text-[11px] text-slate-400">Total Bandar Udara</div>
+                                <div id="kpi-bandara" class="text-xl font-bold text-purple-400 mt-0.5">254</div>
+                                <div class="text-[10px] text-slate-500">Komersial, Domestik & Perintis</div>
+                            </div>
+                            <i class="fa-solid fa-plane-departure text-3xl text-purple-500/20 mr-2"></i>
+                        </div>
+
+                        <!-- Chart Bandara per Provinsi -->
+                        <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800 space-y-2">
+                            <div class="text-xs font-semibold text-slate-300">
+                                Sebaran Bandara Terbanyak per Provinsi
+                            </div>
+                            <div class="h-40">
+                                <canvas id="chart-bandara-prov"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECTION 3: STATISTIK KERETA API -->
+                    <div id="section-stat-kereta" class="space-y-3">
+                        <div class="flex items-center justify-between border-b border-emerald-950 pb-1">
+                            <span class="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-train"></i> Statistik Perkeretaapian
+                            </span>
+                            <span class="text-[10px] bg-emerald-950/70 text-emerald-300 border border-emerald-800/40 px-2 py-0.5 rounded-full font-mono">Kereta</span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+                                <div class="text-[11px] text-slate-400">Stasiun Kereta</div>
+                                <div id="kpi-stasiun" class="text-lg font-bold text-emerald-400 mt-0.5">288</div>
+                                <div class="text-[10px] text-slate-500">Jaringan Rel Nasional</div>
+                            </div>
+                            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+                                <div class="text-[11px] text-slate-400">Kawasan Stasiun</div>
+                                <div class="text-lg font-bold text-teal-400 mt-0.5">200+</div>
+                                <div class="text-[10px] text-slate-500">Prasarana & Depo</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SECTION 4: STATISTIK SDM & PENUNJANG -->
+                    <div id="section-stat-sdm" class="space-y-3">
+                        <div class="flex items-center justify-between border-b border-amber-950 pb-1">
+                            <span class="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                                <i class="fa-solid fa-graduation-cap"></i> Statistik SDM & Penunjang
+                            </span>
+                            <span class="text-[10px] bg-amber-950/70 text-amber-300 border border-amber-800/40 px-2 py-0.5 rounded-full font-mono">BPSDMP</span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+                                <div class="text-[11px] text-slate-400">Sekolah Kedinasan</div>
+                                <div id="kpi-sekolah" class="text-lg font-bold text-amber-400 mt-0.5">37</div>
+                                <div class="text-[10px] text-slate-500">Kampus Perhubungan</div>
+                            </div>
+                            <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+                                <div class="text-[11px] text-slate-400">Provinsi Terhubung</div>
+                                <div class="text-lg font-bold text-sky-400 mt-0.5">38</div>
+                                <div class="text-[10px] text-slate-500">Batas Administrasi</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 4: ABOUT GISHUB & OGC -->
+                <div id="tab-about" class="tab-content hidden space-y-3 text-xs leading-relaxed text-slate-300">
+                    <div class="p-3 bg-slate-950/80 rounded-xl border border-slate-800 space-y-2">
+                        <div class="font-bold text-sky-400 flex items-center gap-1.5">
+                            <i class="fa-solid fa-circle-info"></i>
+                            <span>Tentang Arsitektur GISHUB</span>
+                        </div>
+                        <p>
+                            <b>GISHUB (Simpul Transportasi)</b> adalah platform geospasial resmi milik Kementerian Perhubungan RI berbasis GeoNode & GeoServer OGC Standard.
+                        </p>
+                        <p>
+                            Aplikasi WebGIS ini terhubung secara langsung menggunakan:
+                        </p>
+                        <ul class="list-disc list-inside space-y-1 text-slate-400 pl-1">
+                            <li><b class="text-slate-200">OGC WMS:</b> Rendering cepat jutaan garis alur dan poligon via server GISHUB Kemenhub.</li>
+                            <li><b class="text-slate-200">OGC WFS & GeoJSON:</b> Mengambil geometri fitur dan data tabular secara dinamis.</li>
+                            <li><b class="text-slate-200">PostGIS 3.6:</b> Mesin analisis spasial backend untuk query geodetik dan relasi spasial.</li>
+                        </ul>
+                    </div>
+
+                    <div class="p-3 bg-slate-950/80 rounded-xl border border-slate-800 space-y-1">
+                        <div class="font-semibold text-slate-200">Endpoint Sumber Data:</div>
+                        <div class="text-[11px] font-mono text-sky-400 break-all">
+                            https://gishub.kemenhub.go.id/geoserver/ows
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Footer -->
+            <div class="p-3 border-t border-slate-800 bg-slate-950/90 text-[11px] text-slate-400 flex items-center justify-between">
+                <span>Data Source: <b>GISHUB Kemenhub</b></span>
+                <span class="text-sky-400 font-mono">GeoServer + PostGIS</span>
+            </div>
+        </aside>
+
+        <!-- MAIN MAP DISPLAY -->
+        <main class="flex-1 relative">
+            <div id="map" class="w-full h-full z-10"></div>
+
+            <!-- FLOATING MAP CONTROLS -->
+            <!-- Basemap Selector (Top Right) -->
+            <div class="absolute top-4 right-4 z-20 bg-slate-900/90 backdrop-blur border border-slate-700 rounded-xl p-2 shadow-xl flex items-center space-x-2 text-xs">
+                <span class="text-slate-400 font-medium pl-1">Basemap:</span>
+                <button class="basemap-btn active px-2.5 py-1 rounded bg-sky-600 text-white font-medium transition" data-basemap="carto-dark">Dark</button>
+                <button class="basemap-btn px-2.5 py-1 rounded bg-slate-800 text-slate-300 hover:bg-slate-700 transition" data-basemap="esri-sat">Satelit</button>
+                <button class="basemap-btn px-2.5 py-1 rounded bg-slate-800 text-slate-300 hover:bg-slate-700 transition" data-basemap="osm">OSM</button>
+            </div>
+
+            <!-- Coordinate Tracker (Bottom Left) -->
+            <div class="absolute bottom-4 left-4 z-20 bg-slate-900/80 backdrop-blur border border-slate-800 text-[11px] text-slate-300 px-3 py-1.5 rounded-lg shadow font-mono">
+                <span id="mouse-coords">Lat: -2.00000 | Lng: 118.00000</span>
+            </div>
+
+            <!-- Dynamic Legend (Bottom Right) -->
+            <div id="map-legend" class="absolute bottom-4 right-4 z-20 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-xl p-3 shadow-2xl max-w-xs space-y-2 text-xs max-h-72 overflow-y-auto custom-scrollbar">
+                <div class="font-bold text-slate-200 border-b border-slate-800 pb-1 flex items-center justify-between">
+                    <span>Legenda GISHUB</span>
+                    <i class="fa-solid fa-map-pin text-sky-400"></i>
+                </div>
+                <div class="space-y-2" id="legend-items">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- FEATURE DETAIL DRAWER (Slide in from right) -->
+            <div id="detail-drawer" class="absolute top-4 right-4 bottom-4 w-88 bg-slate-900/95 backdrop-blur border border-slate-700 rounded-2xl shadow-2xl z-30 p-4 flex flex-col transform translate-x-[110%] transition-transform duration-300 ease-in-out">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div class="flex items-center gap-2">
+                        <span id="detail-badge" class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                            Fitur
+                        </span>
+                        <h3 id="detail-title" class="font-bold text-sm text-slate-100 truncate max-w-[180px]">Detail Informasi</h3>
+                    </div>
+                    <button id="btn-close-drawer" class="text-slate-400 hover:text-white transition p-1">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                    </button>
+                </div>
+
+                <div id="detail-content" class="flex-1 overflow-y-auto py-3 space-y-3 custom-scrollbar text-xs">
+                    <!-- Populated dynamically -->
+                </div>
+
+                <div class="pt-3 border-t border-slate-800">
+                    <button id="btn-zoom-to-feature" class="w-full bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold py-2 rounded-lg transition flex items-center justify-center gap-1.5 shadow">
+                        <i class="fa-solid fa-location-crosshairs"></i>
+                        <span>Fokuskan ke Peta</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- BOTTOM ATTRIBUTE TABLE DRAWER -->
+            <div id="table-drawer" class="absolute bottom-0 left-0 right-0 h-64 bg-slate-900/98 backdrop-blur border-t border-slate-700 shadow-2xl z-30 flex flex-col transform translate-y-full transition-transform duration-300 ease-in-out">
+                <div class="px-4 py-2 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+                    <div class="flex items-center space-x-3 text-xs">
+                        <span class="font-bold text-slate-200">Tabel Data Spasial:</span>
+                        <select id="table-layer-select" class="bg-slate-900 border border-slate-700 text-xs rounded px-2 py-1 text-slate-200">
+                            <option value="pelabuhan">Pelabuhan Umum (GISHUB)</option>
+                            <option value="bandara">Bandar Udara (GISHUB)</option>
+                            <option value="stasiun">Stasiun Kereta Api (GISHUB)</option>
+                            <option value="kecelakaan">Kecelakaan Pelayaran (GISHUB)</option>
+                            <option value="sekolah">Sekolah Kedinasan (GISHUB)</option>
+                        </select>
+                        <span id="table-record-count" class="text-sky-400 font-mono text-[11px]">Memuat data...</span>
+                    </div>
+                    <button id="btn-close-table" class="text-slate-400 hover:text-white transition p-1">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-auto custom-scrollbar" id="table-content-container">
+                    <!-- Dynamic Table Generated here -->
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="app.js"></script>
+</body>
+</html>

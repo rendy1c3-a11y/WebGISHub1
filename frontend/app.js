@@ -92,11 +92,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const GISHUB_OWS = "https://gishub.kemenhub.go.id/geoserver/ows";
 
-    // 3. Load Katalog Lengkap 24 Dataset GISHUB
+    // 3. Load Katalog Lengkap 24 Dataset GISHUB (Mendukung PostGIS Lokal & GitHub Pages)
     async function loadCatalog() {
         try {
-            const res = await fetch("/api/gishub/catalog");
-            catalogData = await res.json();
+            // Coba ambil dari API lokal PostGIS, atau fallback ke catalog.json (GitHub Pages)
+            try {
+                const res = await fetch("/api/gishub/catalog");
+                if (!res.ok) throw new Error("API not available");
+                catalogData = await res.json();
+            } catch (err) {
+                const staticRes = await fetch("catalog.json");
+                catalogData = await staticRes.json();
+            }
+
             renderCatalogList(catalogData);
             populateSpatialPortDropdown();
 
