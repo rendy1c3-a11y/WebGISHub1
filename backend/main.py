@@ -527,15 +527,50 @@ def get_stats():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DATA_DIR = os.path.join(ROOT_DIR, "data")
+
+if os.path.exists(DATA_DIR):
+    app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
+
 if os.path.exists(FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 @app.get("/")
 def serve_index():
-    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    index_path = os.path.join(ROOT_DIR, "index.html")
+    if not os.path.exists(index_path):
+        index_path = os.path.join(FRONTEND_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "Frontend belum dibuat"}
+
+@app.get("/app.js")
+def serve_app_js():
+    fpath = os.path.join(ROOT_DIR, "app.js")
+    if not os.path.exists(fpath):
+        fpath = os.path.join(FRONTEND_DIR, "app.js")
+    if os.path.exists(fpath):
+        return FileResponse(fpath, media_type="application/javascript")
+    raise HTTPException(status_code=404)
+
+@app.get("/style.css")
+def serve_style_css():
+    fpath = os.path.join(ROOT_DIR, "style.css")
+    if not os.path.exists(fpath):
+        fpath = os.path.join(FRONTEND_DIR, "style.css")
+    if os.path.exists(fpath):
+        return FileResponse(fpath, media_type="text/css")
+    raise HTTPException(status_code=404)
+
+@app.get("/catalog.json")
+def serve_catalog_json():
+    fpath = os.path.join(ROOT_DIR, "catalog.json")
+    if not os.path.exists(fpath):
+        fpath = os.path.join(FRONTEND_DIR, "catalog.json")
+    if os.path.exists(fpath):
+        return FileResponse(fpath, media_type="application/json")
+    raise HTTPException(status_code=404)
 
 if __name__ == "__main__":
     import uvicorn

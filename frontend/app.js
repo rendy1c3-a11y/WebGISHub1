@@ -1,4 +1,4 @@
-// WebGIS Terintegrasi GISHUB Kemenhub & PostGIS (24 Dataset Lengkap)
+// WebGIS Terintegrasi Data Lokal GISHUB Kemenhub (24 Dataset Lengkap)
 document.addEventListener("DOMContentLoaded", () => {
     // 1. Inisialisasi Peta Leaflet
     const map = L.map("map", {
@@ -10,7 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     L.control.zoom({ position: "topleft" }).addTo(map);
 
-    // BIKIN CUSTOM PANES AGAR POLIGON TIDAK TERTUTUP BASEMAP ATAU SALING TERTUMPUK
+    // Custom panes agar poligon, garis, dan titik tersusun bertingkat dengan benar
     map.createPane('polygonPane');
     map.getPane('polygonPane').style.zIndex = 350;
 
@@ -84,31 +84,37 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // 2. State & Layer Storage
-    const activeLayers = {}; // id -> L.tileLayer.wms or L.geoJSON
+    // 2. State & In-Memory Cache
+    const activeLayers = {}; // id -> L.GeoJSON
     const layerMetadata = {};
     const layerOpacities = {};
+    const geojsonCache = {}; // id -> GeoJSON Object (cache lokal)
     let catalogData = [];
 
-    const GISHUB_OWS = "https://gishub.kemenhub.go.id/geoserver/ows";
+    // Helper untuk mengambil GeoJSON lokal
+    async function getLocalGeoJSON(layerId) {
+        if (geojsonCache[layerId]) {
+            return geojsonCache[layerId];
+        }
+        const res = await fetch(`data/${layerId}.geojson`);
+        if (!res.ok) {
+            throw new Error(`Gagal membaca data/${layerId}.geojson (HTTP ${res.status})`);
+        }
+        const data = await res.json();
+        geojsonCache[layerId] = data;
+        return data;
+    }
 
-    // 3. Load Katalog Lengkap 24 Dataset GISHUB (Mendukung PostGIS Lokal & GitHub Pages)
+    // 3. Load Katalog Lengkap 24 Dataset
     async function loadCatalog() {
         try {
-            // Coba ambil dari API lokal PostGIS, atau fallback ke catalog.json (GitHub Pages)
-            try {
-                const res = await fetch("/api/gishub/catalog");
-                if (!res.ok) throw new Error("API not available");
-                catalogData = await res.json();
-            } catch (err) {
-                const staticRes = await fetch("catalog.json");
-                catalogData = await staticRes.json();
-            }
+            const res = await fetch("catalog.json");
+            catalogData = await res.json();
 
             renderCatalogList(catalogData);
             populateSpatialPortDropdown();
 
-            // Aktifkan default layers
+            // Aktifkan default layers secara lokal
             for (const item of catalogData) {
                 if (item.active) {
                     await toggleLayer(item.id, true);
@@ -117,7 +123,7 @@ document.addEventListener("DOMContentLoaded", () => {
             updateActiveBadge();
             renderLegend();
         } catch (e) {
-            console.error("Gagal muat katalog GISHUB:", e);
+            console.error("Gagal muat katalog:", e);
         }
     }
 
@@ -127,7 +133,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         items.forEach(item => {
             layerMetadata[item.id] = item;
-            layerOpacities[item.id] = layerOpacities[item.id] || (item.type === "Polygon" ? 0.4 : 0.85);
+            layerOpacities[item.id] = layerOpacities[item.id] || (item.type === "Polygon" ? 0.35 : 0.85);
 
             const isChecked = !!activeLayers[item.id] || (item.active && activeLayers[item.id] === undefined);
 
@@ -177,10 +183,10 @@ document.addEventListener("DOMContentLoaded", () => {
             opacityInput.addEventListener("input", (e) => {
                 const val = parseFloat(e.target.value);
                 layerOpacities[item.id] = val;
-                if (activeLayers[item.id]) {
-                    if (activeLayers[item.id].setOpacity) {
-                        activeLayers[item.id].setOpacity(val);
-                    } else if (activeLayers[item.id].setStyle) {
+                if (activeLayers[item.id] && activeLayers[item.id].setStyle) {
+                    if (item.type === "Polygon") {
+                        activeLayers[item.id].setStyle({ fillOpacity: val, opacity: Math.min(val + 0.3, 1) });
+                    } else {
                         activeLayers[item.id].setStyle({ fillOpacity: val, opacity: val });
                     }
                 }
@@ -192,12 +198,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     toggle.checked = true;
                     toggleLayer(item.id, true);
                 }
-                setTimeout(() => focusLayer(item.id), 400);
+                setTimeout(() => focusLayer(item.id), 300);
             });
         });
     }
 
-    // 4. Toggle Layer (Semua Titik Point Dibuat BULAT, Poligon & Garis Bebas Kotak Fokus)
+    // 4. Toggle Layer (100% Akses Data Lokal GeoJSON, Titik Bulat, Bebas Kotak Fokus)
     async function toggleLayer(layerId, enable) {
         const meta = layerMetadata[layerId];
         if (!meta) return;
@@ -208,16 +214,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 delete activeLayers[layerId];
             }
         } else {
-            // A. TITIK (POINT): SEMUA TITIK DIRENDER BULAT (L.circleMarker), BUKAN KOTAK WMS
-            if (meta.type === "Point") {
-                try {
-                    let geojsonUrl = meta.postgis_table
-                        ? `/api/gishub/geojson/${meta.postgis_table}`
-                        : `/api/gishub/wfs-proxy?typename=${encodeURIComponent(meta.layer_name)}&max_features=500`;
+            try {
+                const geojson = await getLocalGeoJSON(layerId);
 
-                    const res = await fetch(geojsonUrl);
-                    const geojson = await res.json();
-
+                if (meta.type === "Point") {
+                    // TITIK (POINT): Render bulat sempurna L.circleMarker, warna solid, outline putih
                     activeLayers[layerId] = L.geoJSON(geojson, {
                         pane: 'pointPane',
                         pointToLayer: (feat, latlng) => {
@@ -249,81 +250,80 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                     }).addTo(map);
 
-                } catch (e) {
-                    console.warn(`Gagal load GeoJSON point untuk ${meta.layer_name}, fallback ke WMS:`, e);
-                    loadWmsFallback(layerId, meta);
-                }
-            } else if (meta.type === "Polygon") {
-                // B. POLIGON (AR): BATAS PROVINSI & KAWASAN
-                if (meta.postgis_table) {
-                    try {
-                        const res = await fetch(`/api/gishub/geojson/${meta.postgis_table}`);
-                        const geojson = await res.json();
+                } else if (meta.type === "Polygon") {
+                    // POLIGON (AR): Batas Provinsi, Kawasan Pelabuhan, Stasiun, Bandara
+                    activeLayers[layerId] = L.geoJSON(geojson, {
+                        pane: 'polygonPane',
+                        style: (feat) => {
+                            return {
+                                color: meta.color,
+                                weight: layerId === "penunjang_adm_prov_ar" ? 1.8 : 2.2,
+                                fillColor: meta.color,
+                                fillOpacity: layerOpacities[layerId] || 0.35,
+                                dashArray: layerId === "penunjang_adm_prov_ar" ? "3" : null
+                            };
+                        },
+                        onEachFeature: (feat, layer) => {
+                            const p = feat.properties || {};
+                            const title = p.nama || p.nama_prov || p.name || p.NAMOBJ || p.nama_stasi || meta.title;
+                            layer.bindTooltip(title, { sticky: true });
 
-                        activeLayers[layerId] = L.geoJSON(geojson, {
-                            pane: 'polygonPane',
-                            style: (feat) => {
-                                return {
-                                    color: meta.color,
-                                    weight: meta.id === "penunjang_adm_prov_ar" ? 2 : 2.5,
-                                    fillColor: meta.color,
-                                    fillOpacity: layerOpacities[layerId] || 0.35,
-                                    dashArray: meta.id === "penunjang_adm_prov_ar" ? "3" : null
-                                };
-                            },
-                            onEachFeature: (feat, layer) => {
-                                const p = feat.properties || {};
-                                const title = p.nama || p.nama_prov || p.name || p.NAMOBJ || p.nama_stasi || meta.title;
-                                layer.bindTooltip(title, { sticky: true });
+                            layer.on("mouseover", () => {
+                                layer.setStyle({ weight: 3.5, fillOpacity: 0.6 });
+                            });
+                            layer.on("mouseout", () => {
+                                if (activeLayers[layerId]) activeLayers[layerId].resetStyle(layer);
+                            });
 
-                                layer.on("mouseover", () => {
-                                    layer.setStyle({ weight: 4, fillOpacity: 0.6 });
-                                });
-                                layer.on("mouseout", () => {
-                                    if (activeLayers[layerId]) activeLayers[layerId].resetStyle(layer);
-                                });
+                            layer.on("click", (e) => {
+                                L.DomEvent.stopPropagation(e);
+                                if (e.originalEvent && e.originalEvent.target && typeof e.originalEvent.target.blur === "function") {
+                                    e.originalEvent.target.blur();
+                                }
+                                openDetailDrawer(feat, layer, meta);
+                            });
+                        }
+                    }).addTo(map);
 
-                                layer.on("click", (e) => {
-                                    L.DomEvent.stopPropagation(e);
-                                    // Hilangkan fokus bounding box kotak hitam bawaan browser
-                                    if (e.originalEvent && e.originalEvent.target && typeof e.originalEvent.target.blur === "function") {
-                                        e.originalEvent.target.blur();
-                                    }
-                                    openDetailDrawer(feat, layer, meta);
-                                });
-                            }
-                        }).addTo(map);
-
-                    } catch (e) {
-                        console.warn(`Gagal load GeoJSON polygon untuk ${meta.layer_name}:`, e);
-                        loadWmsFallback(layerId, meta);
-                    }
                 } else {
-                    loadWmsFallback(layerId, meta);
+                    // LINESTRING (LN): Alur Pelayaran, Rel KA Barang, Rute Penerbangan
+                    activeLayers[layerId] = L.geoJSON(geojson, {
+                        pane: 'linePane',
+                        style: {
+                            color: meta.color || '#38bdf8',
+                            weight: 2.5,
+                            opacity: layerOpacities[layerId] || 0.85
+                        },
+                        onEachFeature: (feat, layer) => {
+                            const p = feat.properties || {};
+                            const title = p.nama || p.rute || p.nama_jalur || p.trayek || p.NAMOBJ || meta.title;
+                            layer.bindTooltip(title, { sticky: true });
+
+                            layer.on("mouseover", () => {
+                                layer.setStyle({ weight: 4.5, opacity: 1 });
+                            });
+                            layer.on("mouseout", () => {
+                                if (activeLayers[layerId]) activeLayers[layerId].resetStyle(layer);
+                            });
+
+                            layer.on("click", (e) => {
+                                L.DomEvent.stopPropagation(e);
+                                if (e.originalEvent && e.originalEvent.target && typeof e.originalEvent.target.blur === "function") {
+                                    e.originalEvent.target.blur();
+                                }
+                                openDetailDrawer(feat, layer, meta);
+                            });
+                        }
+                    }).addTo(map);
                 }
-            } else {
-                // C. LINESTRING (ALUR, REL, RUTE)
-                loadWmsFallback(layerId, meta);
+
+            } catch (e) {
+                console.error(`Gagal render layer lokal ${layerId}:`, e);
             }
         }
 
         updateActiveBadge();
         renderLegend();
-    }
-
-    function loadWmsFallback(layerId, meta) {
-        let paneName = 'pointPane';
-        if (meta.type === "Polygon") paneName = 'polygonPane';
-        else if (meta.type === "LineString") paneName = 'linePane';
-
-        activeLayers[layerId] = L.tileLayer.wms(GISHUB_OWS, {
-            layers: meta.layer_name,
-            styles: meta.layer_name, // Mengirim style eksplisit workspace:layer
-            format: "image/png",
-            transparent: true,
-            opacity: layerOpacities[layerId] || 0.85,
-            pane: paneName
-        }).addTo(map);
     }
 
     function focusLayer(layerId) {
@@ -337,7 +337,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
         }
-        // Fallback default center
         map.setView([-2.0, 118.0], 5);
     }
 
@@ -375,7 +374,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("active-layers-badge").textContent = `${count} Aktif`;
     }
 
-    // 6. Dynamic Legend Widget - SEMUA SIMBOL TITIK DIBUAT BULAT SEMPURNA
+    // 6. Dynamic Legend Widget - SIMBOL TITIK BULAT SEMPURNA
     function renderLegend() {
         const container = document.getElementById("legend-items");
         container.innerHTML = "";
@@ -421,12 +420,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function openDetailDrawer(feat, layer, meta) {
         currentSelectedLayer = layer;
-        const p = feat.properties;
+        const p = feat.properties || {};
         const titleEl = document.getElementById("detail-title");
         const badgeEl = document.getElementById("detail-badge");
         const contentEl = document.getElementById("detail-content");
 
-        titleEl.textContent = p.nama || p.nama_prov || p.nama_kapal || p.name || p.nama_stasi || "Detail Fitur";
+        titleEl.textContent = p.nama || p.nama_prov || p.nama_kapal || p.name || p.nama_stasi || meta.title;
         badgeEl.textContent = meta.category;
         badgeEl.style.backgroundColor = `${meta.color}25`;
         badgeEl.style.color = meta.color;
@@ -434,11 +433,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         let html = '<div class="space-y-2">';
         for (const [k, v] of Object.entries(p)) {
-            if (k === "geom" || k === "layer_type") continue;
+            if (k === "geom" || k === "shape" || k === "layer_type") continue;
             html += `
                 <div class="p-2 bg-slate-950/70 rounded-lg border border-slate-800">
                     <span class="text-[10px] text-slate-400 block uppercase font-mono">${k}</span>
-                    <span class="text-xs font-semibold text-slate-200 break-words">${v !== null ? v : "-"}</span>
+                    <span class="text-xs font-semibold text-slate-200 break-words">${v !== null && v !== undefined ? v : "-"}</span>
                 </div>
             `;
         }
@@ -458,7 +457,15 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // 8. Bottom Attribute Table Drawer
+    // 8. Bottom Attribute Table Drawer (Akses 100% Data Lokal)
+    const tableMapping = {
+        pelabuhan: "laut_pelabuhan_pt_new",
+        bandara: "udara_airport_pt",
+        stasiun: "kereta_stasiunka_ar",
+        kecelakaan: "laut_kecelakaanpelayaran_pt",
+        sekolah: "bpsdmp_sekolah_pt"
+    };
+
     const tableDrawer = document.getElementById("table-drawer");
     document.getElementById("btn-toggle-table").addEventListener("click", () => {
         tableDrawer.classList.toggle("translate-y-full");
@@ -477,20 +484,22 @@ document.addEventListener("DOMContentLoaded", () => {
         const countEl = document.getElementById("table-record-count");
         const container = document.getElementById("table-content-container");
         countEl.textContent = "Mengambil data...";
-        container.innerHTML = `<div class="p-4 text-xs text-slate-400">Memuat data dari database PostGIS...</div>`;
+        container.innerHTML = `<div class="p-4 text-xs text-slate-400">Memuat data dari file GeoJSON lokal...</div>`;
+
+        const targetId = tableMapping[tableName] || tableName;
 
         try {
-            const res = await fetch(`/api/gishub/geojson/${tableName}?limit=100`);
-            const data = await res.json();
-            const feats = data.features || [];
-            countEl.textContent = `${feats.length} Baris Data`;
+            const data = await getLocalGeoJSON(targetId);
+            const allFeats = data.features || [];
+            const feats = allFeats.slice(0, 100);
+            countEl.textContent = `${feats.length} Baris Data (dari total ${allFeats.length})`;
 
             if (feats.length === 0) {
                 container.innerHTML = `<div class="p-4 text-xs text-slate-400 italic">Tidak ada data.</div>`;
                 return;
             }
 
-            const keys = Object.keys(feats[0].properties).filter(k => k !== "layer_type");
+            const keys = Object.keys(feats[0].properties || {}).filter(k => k !== "geom" && k !== "shape" && k !== "layer_type").slice(0, 7);
             let tableHtml = '<table class="gishub-table"><thead><tr>';
             keys.forEach(k => tableHtml += `<th>${k.toUpperCase()}</th>`);
             tableHtml += '<th>AKSI</th></tr></thead><tbody>';
@@ -498,12 +507,13 @@ document.addEventListener("DOMContentLoaded", () => {
             feats.forEach(f => {
                 tableHtml += '<tr>';
                 keys.forEach(k => {
-                    tableHtml += `<td>${f.properties[k] !== null ? f.properties[k] : "-"}</td>`;
+                    const val = f.properties[k];
+                    tableHtml += `<td>${val !== null && val !== undefined ? val : "-"}</td>`;
                 });
-                if (f.geometry.type === "Point") {
+                if (f.geometry && f.geometry.type === "Point") {
                     tableHtml += `<td><button class="px-2 py-0.5 rounded bg-sky-600/30 text-sky-300 border border-sky-500/40 hover:bg-sky-600 hover:text-white transition" onclick="zoomToCoord(${f.geometry.coordinates[1]}, ${f.geometry.coordinates[0]})">Zoom</button></td>`;
                 } else {
-                    tableHtml += `<td><span class="text-slate-500 text-[10px]">Poligon</span></td>`;
+                    tableHtml += `<td><span class="text-slate-500 text-[10px]">${f.geometry ? f.geometry.type : 'Fitur'}</span></td>`;
                 }
                 tableHtml += '</tr>';
             });
@@ -512,7 +522,7 @@ document.addEventListener("DOMContentLoaded", () => {
             container.innerHTML = tableHtml;
 
         } catch (e) {
-            container.innerHTML = `<div class="p-4 text-xs text-rose-400">Gagal memuat tabel: ${e.message}</div>`;
+            container.innerHTML = `<div class="p-4 text-xs text-rose-400">Gagal memuat tabel lokal: ${e.message}</div>`;
         }
     }
 
@@ -520,21 +530,44 @@ document.addEventListener("DOMContentLoaded", () => {
         map.setView([lat, lng], 12);
     };
 
-    // 9. PostGIS Spatial Analysis (ST_DWithin & ST_Distance) DENGAN FITUR RESET LENGKAP
+    // 9. Analisis Spasial Buffer (100% Client-Side Geodesic Haversine Formula)
     let bufferCircleLayer = null;
     let incidentHighlightLayer = null;
+    let portsCache = null;
+    let accidentsCache = null;
+
+    // Haversine formula (km)
+    function calcDistanceKm(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
 
     async function populateSpatialPortDropdown() {
         try {
-            const res = await fetch("/api/gishub/geojson/pelabuhan?limit=250");
-            const data = await res.json();
+            portsCache = await getLocalGeoJSON("laut_pelabuhan_pt_new");
             const select = document.getElementById("select-port-spatial");
             select.innerHTML = '<option value="">-- Pilih Pelabuhan Acuan --</option>';
 
-            data.features.forEach(f => {
+            const sortedFeats = [...(portsCache.features || [])].sort((a, b) => {
+                const nameA = (a.properties.nama || "").toLowerCase();
+                const nameB = (b.properties.nama || "").toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+
+            sortedFeats.forEach(f => {
                 const opt = document.createElement("option");
-                opt.value = f.id;
-                opt.textContent = `${f.properties.nama || "Pelabuhan"} (${f.properties.kode || "-"})`;
+                const p = f.properties || {};
+                const coord = f.geometry ? f.geometry.coordinates : [0, 0];
+                opt.value = p.objectid || p.id || p.kode || p.nama;
+                opt.dataset.lat = coord[1];
+                opt.dataset.lon = coord[0];
+                opt.textContent = `${p.nama || "Pelabuhan"} (${p.provinsi || p.kode || "-"})`;
                 select.appendChild(opt);
             });
         } catch (e) {
@@ -547,7 +580,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("radius-val").textContent = `${e.target.value} km`;
     });
 
-    // FUNGSI BERSIHKAN / RESET ANALISIS SPASIAL
+    // Reset Analisis Spasial
     function clearSpatialAnalysis() {
         if (bufferCircleLayer) {
             map.removeLayer(bufferCircleLayer);
@@ -564,32 +597,61 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("spatial-results-count").textContent = "0 Insiden";
         document.getElementById("select-port-spatial").value = "";
 
-        // Sembunyikan floating clear badge jika ada
         const floatingBadge = document.getElementById("floating-analysis-badge");
         if (floatingBadge) floatingBadge.remove();
 
         map.setView([-2.0, 118.0], 5);
     }
 
-    // Tombol Reset Analisis di Sidebar
     const btnResetSpatial = document.getElementById("btn-reset-spatial");
     if (btnResetSpatial) {
         btnResetSpatial.addEventListener("click", clearSpatialAnalysis);
     }
 
-    // Tombol Eksekusi Analisis Spasial
+    // Eksekusi Analisis Spasial
     document.getElementById("btn-run-spatial-buffer").addEventListener("click", async () => {
-        const portId = document.getElementById("select-port-spatial").value;
-        const radiusKm = radiusSlider.value;
+        const select = document.getElementById("select-port-spatial");
+        const portVal = select.value;
+        const radiusKm = parseFloat(radiusSlider.value);
 
-        if (!portId) {
+        if (!portVal) {
             alert("Silakan pilih pelabuhan acuan terlebih dahulu.");
             return;
         }
 
+        const selectedOpt = select.options[select.selectedIndex];
+        const portLat = parseFloat(selectedOpt.dataset.lat);
+        const portLon = parseFloat(selectedOpt.dataset.lon);
+
+        if (isNaN(portLat) || isNaN(portLon)) {
+            alert("Koordinat pelabuhan tidak ditemukan.");
+            return;
+        }
+
         try {
-            const res = await fetch(`/api/spatial/accidents-near-port?port_id=${portId}&radius_km=${radiusKm}`);
-            const data = await res.json();
+            accidentsCache = await getLocalGeoJSON("laut_kecelakaanpelayaran_pt");
+            const nearbyAccidents = [];
+
+            (accidentsCache.features || []).forEach(f => {
+                if (!f.geometry || !f.geometry.coordinates) return;
+                const aLon = f.geometry.coordinates[0];
+                const aLat = f.geometry.coordinates[1];
+                const dist = calcDistanceKm(portLat, portLon, aLat, aLon);
+                if (dist <= radiusKm) {
+                    const p = f.properties || {};
+                    nearbyAccidents.push({
+                        nama_kapal: p.nama_kapal || "Kapal",
+                        lokasi: p.lokasi || "-",
+                        tahun: p.tahun || "-",
+                        jarak_km: parseFloat(dist.toFixed(1)),
+                        kategori: p.kategori || "Insiden",
+                        lat: aLat,
+                        lon: aLon
+                    });
+                }
+            });
+
+            nearbyAccidents.sort((a, b) => a.jarak_km - b.jarak_km);
 
             // Tampilkan hasil di sidebar
             const box = document.getElementById("spatial-results-box");
@@ -597,23 +659,23 @@ document.addEventListener("DOMContentLoaded", () => {
             const listEl = document.getElementById("spatial-results-items");
 
             box.classList.remove("hidden");
-            countEl.textContent = `${data.accidents_list.length} Insiden`;
+            countEl.textContent = `${nearbyAccidents.length} Insiden`;
             listEl.innerHTML = "";
 
-            if (data.accidents_list.length === 0) {
+            if (nearbyAccidents.length === 0) {
                 listEl.innerHTML = `<div class="p-2 text-slate-400 italic">Tidak ada catatan kecelakaan kapal dalam radius ${radiusKm} km dari pelabuhan ini.</div>`;
             } else {
-                data.accidents_list.forEach(item => {
+                nearbyAccidents.forEach(item => {
                     const el = document.createElement("div");
                     el.className = "p-2 bg-slate-950/80 border border-slate-800 rounded-lg flex items-center justify-between";
                     el.innerHTML = `
                         <div>
-                            <div class="font-bold text-slate-100">${item.nama_kapal || "Kapal"}</div>
-                            <div class="text-[10px] text-slate-400">${item.lokasi || "-"} (${item.tahun || "-"})</div>
+                            <div class="font-bold text-slate-100">${item.nama_kapal}</div>
+                            <div class="text-[10px] text-slate-400">${item.lokasi} (${item.tahun})</div>
                         </div>
                         <div class="text-right">
                             <span class="text-xs font-mono font-bold text-amber-400">${item.jarak_km} km</span>
-                            <span class="block text-[9px] text-rose-300 font-semibold uppercase">${item.kategori || "Insiden"}</span>
+                            <span class="block text-[9px] text-rose-300 font-semibold uppercase">${item.kategori}</span>
                         </div>
                     `;
                     listEl.appendChild(el);
@@ -624,7 +686,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (bufferCircleLayer) map.removeLayer(bufferCircleLayer);
             if (incidentHighlightLayer) map.removeLayer(incidentHighlightLayer);
 
-            const portCoord = [data.port_lat, data.port_lon];
+            const portCoord = [portLat, portLon];
             bufferCircleLayer = L.circle(portCoord, {
                 radius: radiusKm * 1000,
                 color: "#f59e0b",
@@ -637,7 +699,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             // Highlight insiden
             incidentHighlightLayer = L.layerGroup();
-            data.accidents_list.forEach(item => {
+            nearbyAccidents.forEach(item => {
                 const marker = L.circleMarker([item.lat, item.lon], {
                     radius: 7,
                     fillColor: "#ef4444",
@@ -650,7 +712,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             incidentHighlightLayer.addTo(map);
 
-            // Tambahkan Floating Clear Button di pojok peta
+            // Floating Clear Button di pojok peta
             let floatingBadge = document.getElementById("floating-analysis-badge");
             if (!floatingBadge) {
                 floatingBadge = document.createElement("div");
@@ -673,7 +735,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // 10. Dashboard Stats & Charts (Chart.js) dengan Fitur Cek List Sendiri-Sendiri
+    // 10. Dashboard Stats & Charts (Chart.js) dengan Fitur Checklist Mandiri
     let chartKecelakaan = null;
     let chartBandara = null;
     let statChecklistInitialized = false;
@@ -724,7 +786,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     const elChk = document.getElementById(item.chk);
                     const elSec = document.getElementById(item.sec);
                     if (elChk && elSec) {
-                        // Sisakan kapal aktif saat reset
                         elChk.checked = (idx === 0);
                         if (idx === 0) elSec.classList.remove("hidden");
                         else elSec.classList.add("hidden");
@@ -738,14 +799,14 @@ document.addEventListener("DOMContentLoaded", () => {
         initStatChecklist();
 
         try {
-            const res = await fetch("/api/gishub/stats");
+            const res = await fetch("data/stats.json");
             const data = await res.json();
 
             // Set KPI
-            if (document.getElementById("kpi-pelabuhan")) document.getElementById("kpi-pelabuhan").textContent = data.totals.total_pelabuhan || 300;
-            if (document.getElementById("kpi-bandara")) document.getElementById("kpi-bandara").textContent = data.totals.total_bandara || 254;
-            if (document.getElementById("kpi-stasiun")) document.getElementById("kpi-stasiun").textContent = data.totals.total_stasiun || 288;
-            if (document.getElementById("kpi-kecelakaan")) document.getElementById("kpi-kecelakaan").textContent = data.totals.total_kecelakaan || 214;
+            if (document.getElementById("kpi-pelabuhan")) document.getElementById("kpi-pelabuhan").textContent = data.totals.total_pelabuhan || 500;
+            if (document.getElementById("kpi-bandara")) document.getElementById("kpi-bandara").textContent = data.totals.total_bandara || 257;
+            if (document.getElementById("kpi-stasiun")) document.getElementById("kpi-stasiun").textContent = data.totals.total_stasiun || 471;
+            if (document.getElementById("kpi-kecelakaan")) document.getElementById("kpi-kecelakaan").textContent = data.totals.total_kecelakaan || 215;
             if (document.getElementById("kpi-sekolah")) document.getElementById("kpi-sekolah").textContent = data.totals.total_sekolah || 37;
 
             // Chart 1: Kategori Kecelakaan Laut

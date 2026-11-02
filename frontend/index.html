@@ -29,8 +29,8 @@
                     <h1 class="font-bold text-lg tracking-wide text-white flex items-center gap-2">
                         GISHUB WEBGIS TRANSPORTASI
                     </h1>
-                    <span class="text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
-                        <i class="fa-solid fa-link text-[9px]"></i> Kemenhub Live
+                    <span class="text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
+                        <i class="fa-solid fa-database text-[9px]"></i> Data Lokal Repo (24 Dataset)
                     </span>
                 </div>
                 <p class="text-xs text-slate-400">Integrasi OGC WMS/WFS GISHUB Kementerian Perhubungan RI & PostgreSQL PostGIS</p>
@@ -366,19 +366,19 @@
                             <b>GISHUB (Simpul Transportasi)</b> adalah platform geospasial resmi milik Kementerian Perhubungan RI berbasis GeoNode & GeoServer OGC Standard.
                         </p>
                         <p>
-                            Aplikasi WebGIS ini terhubung secara langsung menggunakan:
+                            Aplikasi WebGIS ini beroperasi secara mandiri menggunakan data lokal tersimpan di repository:
                         </p>
                         <ul class="list-disc list-inside space-y-1 text-slate-400 pl-1">
-                            <li><b class="text-slate-200">OGC WMS:</b> Rendering cepat jutaan garis alur dan poligon via server GISHUB Kemenhub.</li>
-                            <li><b class="text-slate-200">OGC WFS & GeoJSON:</b> Mengambil geometri fitur dan data tabular secara dinamis.</li>
-                            <li><b class="text-slate-200">PostGIS 3.6:</b> Mesin analisis spasial backend untuk query geodetik dan relasi spasial.</li>
+                            <li><b class="text-slate-200">24 Dataset GeoJSON Lokal:</b> Seluruh data transportasi laut, udara, darat, dan perkeretaapian dimuat langsung dari repository lokal.</li>
+                            <li><b class="text-slate-200">Client-Side Geodesic:</b> Analisis jarak jangkau spasial (Buffer & Distance) dihitung presisi langsung di browser.</li>
+                            <li><b class="text-slate-200">High Reliability:</b> 100% mandiri, tidak bergantung server luar atau GeoServer WMS live.</li>
                         </ul>
                     </div>
 
                     <div class="p-3 bg-slate-950/80 rounded-xl border border-slate-800 space-y-1">
-                        <div class="font-semibold text-slate-200">Endpoint Sumber Data:</div>
-                        <div class="text-[11px] font-mono text-sky-400 break-all">
-                            https://gishub.kemenhub.go.id/geoserver/ows
+                        <div class="font-semibold text-slate-200">Penyimpanan Data:</div>
+                        <div class="text-[11px] font-mono text-emerald-400 break-all">
+                            Repository GitHub (data/*.geojson)
                         </div>
                     </div>
                 </div>

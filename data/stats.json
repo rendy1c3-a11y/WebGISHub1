@@ -1,0 +1,57 @@
+{
+  "totals": {
+    "total_pelabuhan": 500,
+    "total_bandara": 257,
+    "total_stasiun": 471,
+    "total_kecelakaan": 215,
+    "total_sekolah": 37
+  },
+  "accident_categories": [
+    {
+      "kategori": "Terbakar",
+      "count": 69
+    },
+    {
+      "kategori": "Tenggelam",
+      "count": 56
+    },
+    {
+      "kategori": "Tubrukan",
+      "count": 42
+    },
+    {
+      "kategori": "Kandas",
+      "count": 26
+    },
+    {
+      "kategori": "Lain-Lain",
+      "count": 18
+    },
+    {
+      "kategori": "Ledakan",
+      "count": 2
+    }
+  ],
+  "airports_by_prov": [
+    {
+      "provinsi": "Papua",
+      "count": 24
+    },
+    {
+      "provinsi": "Nusa Tenggara Timur",
+      "count": 15
+    },
+    {
+      "provinsi": "Maluku",
+      "count": 13
+    },
+    {
+      "provinsi": "Papua Selatan",
+      "count": 13
+    },
+    {
+      "provinsi": "Papua Barat",
+      "count": 13
+    }
+  ]
+}
